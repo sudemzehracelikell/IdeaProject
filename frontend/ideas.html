@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fikirler - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <!-- Header -->
+        <div class="flex justify-between items-center" style="margin-bottom: var(--space-2xl);">
+            <div>
+                <h1>Fikirler</h1>
+                <p class="text-secondary">Yenilikçi fikirleri keşfedin ve paylaşın</p>
+            </div>
+            <a href="idea-form.html" class="btn btn-primary" id="addIdeaBtn">
+                <span>➕</span> Yeni Fikir Ekle
+            </a>
+        </div>
+
+        <!-- Filters -->
+        <div class="glass-card" style="margin-bottom: var(--space-2xl);">
+            <div class="grid grid-cols-4" style="gap: var(--space-md);">
+                <div>
+                    <label class="form-label">Ara</label>
+                    <input type="text" id="searchInput" class="form-input" placeholder="Fikir ara...">
+                </div>
+                <div>
+                    <label class="form-label">Kategori</label>
+                    <select id="categoryFilter" class="form-select">
+                        <option value="">Tümü</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Durum</label>
+                    <select id="statusFilter" class="form-select">
+                        <option value="">Tümü</option>
+                        <option value="Draft">Taslak</option>
+                        <option value="Public">Yayında</option>
+                        <option value="Closed">Kapalı</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Sırala</label>
+                    <select id="sortFilter" class="form-select">
+                        <option value="date">Tarih (Yeni)</option>
+                        <option value="votes">En Çok Oy</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ideas Grid -->
+        <div class="grid grid-cols-3" id="ideasContainer">
+            <div class="glass-card">
+                <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div id="paginationContainer"></div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        let allIdeas = [];
+        let filteredIdeas = [];
+        let myTeamIds = []; // Helper for filtering
+        let currentPage = 1;
+        const ideasPerPage = 9;
+
+        // Hide add button if not authenticated or is participant
+        if (!auth.isAuthenticated() || auth.isParticipant()) {
+            document.getElementById('addIdeaBtn').style.display = 'none';
+        }
+
+        async function loadIdeas() {
+            showLoading();
+            try {
+                // If non-admin, fetch their teams first
+                if (!auth.isAdmin()) {
+                    try {
+                        const myTeams = await api.getTeams(auth.currentUser.id);
+                        myTeamIds = myTeams.map(t => t.id);
+                    } catch (err) {
+                        console.error('Error loading user teams:', err);
+                    }
+                }
+
+                allIdeas = await api.getIdeas();
+                filteredIdeas = [...allIdeas];
+                applyFilters();
+            } catch (error) {
+                console.error('Error loading ideas:', error);
+                document.getElementById('ideasContainer').innerHTML =
+                    '<div class="glass-card"><p class="text-error">Fikirler yüklenirken hata oluştu. Backend sunucusunun çalıştığından emin olun.</p></div>';
+                showToast('Fikirler yüklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadCategories() {
+            try {
+                const categories = await api.getCategories();
+                const select = document.getElementById('categoryFilter');
+                categories.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = cat.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const categoryId = document.getElementById('categoryFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            const sort = document.getElementById('sortFilter').value;
+
+            filteredIdeas = allIdeas.filter(idea => {
+                // Base Rules for Non-Admins
+                if (!auth.isAdmin()) {
+                    // Rule 1: Must be a Team Idea
+                    if (!idea.TeamID) return false;
+
+                    const isPublic = idea.StatusID?.name === 'Public';
+                    const isMyTeam = idea.TeamID && myTeamIds.includes(idea.TeamID.id);
+
+                    // Rule 2: Cannot see Draft/Closed UNLESS it is THEIR team
+                    if (!isPublic && !isMyTeam) {
+                        return false;
+                    }
+                }
+
+                const matchesSearch = !searchTerm ||
+                    idea.Title.toLowerCase().includes(searchTerm) ||
+                    idea.Description.toLowerCase().includes(searchTerm);
+
+                const matchesCategory = !categoryId ||
+                    idea.CategoryID?.id == categoryId;
+
+                const matchesStatus = !status ||
+                    idea.StatusID?.name === status;
+
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            // Sort
+            if (sort === 'votes') {
+                filteredIdeas.sort((a, b) => (b.VotesCount || 0) - (a.VotesCount || 0));
+            } else {
+                filteredIdeas.sort((a, b) => new Date(b.CreateDate) - new Date(a.CreateDate));
+            }
+
+            currentPage = 1;
+            displayIdeas();
+        }
+
+        function displayIdeas() {
+            const container = document.getElementById('ideasContainer');
+            const startIndex = (currentPage - 1) * ideasPerPage;
+            const endIndex = startIndex + ideasPerPage;
+            const ideasToShow = filteredIdeas.slice(startIndex, endIndex);
+
+            container.innerHTML = '';
+
+            if (ideasToShow.length === 0) {
+                container.appendChild(createEmptyState('Fikir bulunamadı', '🔍'));
+            } else {
+                ideasToShow.forEach(idea => {
+                    container.appendChild(createIdeaCard(idea));
+                });
+            }
+
+            // Update pagination
+            const totalPages = Math.ceil(filteredIdeas.length / ideasPerPage);
+            const paginationContainer = document.getElementById('paginationContainer');
+            paginationContainer.innerHTML = '';
+
+            if (totalPages > 1) {
+                paginationContainer.appendChild(
+                    createPagination(currentPage, totalPages, (page) => {
+                        currentPage = page;
+                        displayIdeas();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    })
+                );
+            }
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input',
+            debounce(() => applyFilters(), 300)
+        );
+        document.getElementById('categoryFilter').addEventListener('change', applyFilters);
+        document.getElementById('statusFilter').addEventListener('change', applyFilters);
+        document.getElementById('sortFilter').addEventListener('change', applyFilters);
+
+        // Initialize
+        loadIdeas();
+        loadCategories();
+    </script>
+</body>
+
+</html>

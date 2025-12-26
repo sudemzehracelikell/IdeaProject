@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <!-- Welcome Section -->
+        <div class="glass-card" style="margin-bottom: var(--space-2xl);">
+            <h1 id="welcomeMessage">Dashboard</h1>
+            <p class="text-secondary">Hoş geldiniz! İşte projenizin özeti.</p>
+        </div>
+
+        <!-- Stats Grid Removed -->
+
+        <!-- Quick Actions -->
+        <div class="glass-card" style="margin-bottom: var(--space-2xl);">
+            <h2 style="margin-bottom: var(--space-lg);">Hızlı İşlemler</h2>
+            <div class="flex gap-md" style="flex-wrap: wrap;" id="quickActionsContainer">
+                <div class="spinner"></div>
+            </div>
+        </div>
+
+        <!-- Recent Ideas -->
+        <div>
+            <div class="flex justify-between items-center" style="margin-bottom: var(--space-lg);">
+                <h2>Son Fikirler</h2>
+                <a href="ideas.html" class="btn btn-ghost btn-sm">Tümünü Gör →</a>
+            </div>
+            <div class="grid grid-cols-3" id="recentIdeas">
+                <div class="glass-card">
+                    <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Panel (if admin) -->
+        <div id="adminPanel" class="hidden" style="margin-top: var(--space-2xl);">
+            <h2 style="margin-bottom: var(--space-lg);">Yönetici Paneli</h2>
+            <div class="grid grid-cols-2">
+                <div class="glass-card">
+                    <h3>Kullanıcı Yönetimi</h3>
+                    <p class="text-secondary">Kullanıcıları görüntüle ve yönet</p>
+                    <button onclick="loadUsers()" class="btn btn-primary btn-sm" style="margin-top: var(--space-md);">
+                        Kullanıcıları Görüntüle
+                    </button>
+                </div>
+                <div class="glass-card">
+                    <h3>Kategori Yönetimi</h3>
+                    <p class="text-secondary">Kategorileri düzenle</p>
+                    <div class="flex gap-sm" style="margin-top: var(--space-md);">
+                        <button onclick="loadCategories()" class="btn btn-outline btn-sm">
+                            Kategorileri Görüntüle
+                        </button>
+                        <button onclick="openAddCategoryModal()" class="btn btn-primary btn-sm">
+                            ➕ Kategori Ekle
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        // Require authentication
+        if (!auth.requireAuth()) {
+            // Will redirect to auth page
+        }
+
+        // Initialize dashboard
+        async function initDashboard() {
+            // Update welcome message
+            if (auth.currentUser) {
+                document.getElementById('welcomeMessage').textContent =
+                    `Hoş geldiniz, ${auth.currentUser.userName}!`;
+            }
+
+            // Show admin panel if admin
+            if (auth.isAdmin()) {
+                document.getElementById('adminPanel').classList.remove('hidden');
+            }
+
+            // Load recent ideas
+            await loadRecentIdeas();
+
+            // Render quick actions based on role
+            renderQuickActions();
+        }
+
+        function renderQuickActions() {
+            const container = document.getElementById('quickActionsContainer');
+            let buttons = '';
+
+            // Add Create buttons - Idea for non-participants, Team for everyone (except unauth handled elsewhere)
+            if (!auth.isParticipant()) {
+                buttons += `
+                    <a href="idea-form.html" class="btn btn-primary">
+                        <span>➕</span> Yeni Fikir Ekle
+                    </a>
+                `;
+            }
+
+            // Create Team enabled for everyone authenticated
+            buttons += `
+                <a href="#" onclick="openCreateTeamModal()" class="btn btn-primary" style="margin-left: var(--space-xs);">
+                    <span>➕</span> Yeni Takım
+                </a>
+            `;
+
+            // Common buttons
+            buttons += `
+                <a href="ideas.html" class="btn btn-outline">
+                    <span>🔍</span> Fikirleri Keşfet
+                </a>
+                <a href="teams.html" class="btn btn-outline">
+                    <span>👥</span> Takımlar
+                </a>
+                <a href="profile.html" class="btn btn-ghost">
+                    <span>👤</span> Profilim
+                </a>
+            `;
+
+            container.innerHTML = buttons;
+        }
+
+        async function loadRecentIdeas() {
+            const container = document.getElementById('recentIdeas');
+
+            try {
+                const ideas = await api.getIdeas();
+                let filteredIdeas = ideas;
+
+                // Visibility Rules for Non-Admins (Participants, Team Leaders, etc.)
+                if (!auth.isAdmin()) {
+                    try {
+                        const myTeams = await api.getTeams(auth.currentUser.id);
+                        const myTeamIds = myTeams.map(t => t.id);
+
+                        filteredIdeas = ideas.filter(idea => {
+                            // Rule 0: Must be a Team Idea (existing rule)
+                            if (!idea.TeamID) return false;
+
+                            const isPublic = idea.StatusID?.name === 'Public';
+                            const isMyTeam = myTeamIds.includes(idea.TeamID.id);
+
+                            // Rule: Show if Public OR Member of Team
+                            return isPublic || isMyTeam;
+                        });
+                    } catch (err) {
+                        console.error('Error fetching teams for filter:', err);
+                        // Fallback: Show only Public if team fetch fails
+                        filteredIdeas = ideas.filter(idea => idea.StatusID?.name === 'Public' && idea.TeamID);
+                    }
+                }
+
+                // Sort by date descending (assuming API returns unsorted or we want latest)
+                // The API seems to return all, assumes order? 
+                // Let's sort to be safe for "Recent"
+                filteredIdeas.sort((a, b) => new Date(b.CreateDate) - new Date(a.CreateDate));
+
+                const recentIdeas = filteredIdeas.slice(0, 3);
+
+                container.innerHTML = '';
+
+                if (recentIdeas.length === 0) {
+                    container.appendChild(createEmptyState('Henüz fikir yok', '💡'));
+                } else {
+                    recentIdeas.forEach(idea => {
+                        container.appendChild(createIdeaCard(idea));
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading ideas:', error);
+                container.innerHTML = '<div class="glass-card"><p class="text-error">Fikirler yüklenirken hata oluştu</p></div>';
+            }
+        }
+
+        async function loadUsers() {
+            showLoading();
+            try {
+                const users = await api.getUsers();
+
+                const modalContent = `
+                    <div id="usersList"></div>
+                `;
+
+                const modal = new Modal('usersModal', 'Kullanıcılar', modalContent);
+                modal.show();
+
+                const usersList = document.getElementById('usersList');
+                users.forEach(user => {
+                    usersList.appendChild(createUserCard(user));
+                });
+            } catch (error) {
+                showToast('Kullanıcılar yüklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadCategories() {
+            showLoading();
+            try {
+                const categories = await api.getCategories();
+
+                const modalContent = `
+                    <div class="grid grid-cols-2" style="gap: var(--space-md);">
+                        ${categories.map(cat => `
+                            <div class="glass-card">
+                                <h4>${cat.name}</h4>
+                                <p class="text-secondary">${cat.description || 'Açıklama yok'}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                const modal = new Modal('categoriesModal', 'Kategoriler', modalContent);
+                modal.show();
+            } catch (error) {
+                showToast('Kategoriler yüklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openAddCategoryModal() {
+            const modalContent = `
+                <form onsubmit="createCategory(event)">
+                    <div class="form-group">
+                        <label class="form-label">Kategori Adı *</label>
+                        <input type="text" class="form-input" name="name" required placeholder="Örn: Teknoloji, Eğitim, Sağlık">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Açıklama</label>
+                        <textarea class="form-textarea" name="description" placeholder="Kategori açıklaması (opsiyonel)" style="min-height: 80px;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Kategori Oluştur</button>
+                </form>
+            `;
+
+            const modal = new Modal('addCategoryModal', 'Yeni Kategori Ekle', modalContent);
+            modal.show();
+        }
+
+        async function createCategory(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            const categoryData = {
+                name: formData.get('name'),
+                description: formData.get('description') || ''
+            };
+
+            showLoading();
+            try {
+                await api.createCategory(categoryData);
+                closeModal('addCategoryModal');
+                showToast('Kategori oluşturuldu!', 'success');
+                loadCategories();
+            } catch (error) {
+                console.error('Error creating category:', error);
+                showToast('Kategori oluşturulurken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Initialize on load
+        initDashboard();
+    </script>
+</body>
+
+</html>

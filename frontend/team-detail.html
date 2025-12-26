@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Takım Detayı - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <div id="teamContent">
+            <div class="spinner" style="margin: var(--space-3xl) auto;"></div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const teamId = urlParams.get('id');
+
+        if (!teamId) {
+            window.location.href = 'teams.html';
+        }
+
+        let currentTeam = null;
+
+        async function loadTeamDetail() {
+            showLoading();
+            try {
+                // Fetch team details
+                currentTeam = await api.getTeam(teamId);
+
+                // Fetch all members details immediately
+                const memberIds = currentTeam.teamMember || [];
+                const members = [];
+                let currentUserIsMember = false;
+
+                if (memberIds.length > 0) {
+                    // Fetch all team members in parallel
+                    const memberPromises = memberIds.map(async (mId) => {
+                        try {
+                            const member = await api.getTeamMember(mId);
+                            const user = await api.getUser(member.user);
+                            return {
+                                memberId: mId,
+                                user: user
+                            };
+                        } catch (e) {
+                            console.error('Error fetching member:', e);
+                            return null;
+                        }
+                    });
+
+                    const results = await Promise.all(memberPromises);
+                    members.push(...results.filter(m => m !== null));
+
+                    // Check if current user is in the team
+                    currentUserIsMember = members.some(m => m.user.id == auth.currentUser.id);
+                }
+
+                // Render page
+                displayTeamDetail(members, currentUserIsMember);
+
+            } catch (error) {
+                console.error('Error loading team:', error);
+                document.getElementById('teamContent').innerHTML =
+                    '<div class="glass-card"><p class="text-error">Takım yüklenirken hata oluştu</p></div>';
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function displayTeamDetail(members, isMember) {
+            const container = document.getElementById('teamContent');
+            const memberCount = members.length;
+
+            // Allow edit/add if user is Admin OR (a member AND is a Team Leader/Role 3)
+            // Participants (Role 2) cannot edit even if members
+            const isTeamLeader = auth.currentUser.role === 3;
+            const canEdit = auth.isAuthenticated() && (auth.isAdmin() || (isMember && isTeamLeader));
+
+            container.innerHTML = `
+                <!-- Header -->
+                <div class="flex justify-between items-start" style="margin-bottom: var(--space-2xl);">
+                    <div style="flex: 1;">
+                        <div style="
+                            width: 80px;
+                            height: 80px;
+                            border-radius: var(--radius-xl);
+                            background: var(--gradient-accent);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 3rem;
+                            margin-bottom: var(--space-lg);
+                        ">
+                            👥
+                        </div>
+                        <h1>${currentTeam.teamName}</h1>
+                        <p class="text-secondary">${memberCount} üye</p>
+                    </div>
+                    ${canEdit ? `
+                        <div class="flex gap-sm">
+                            <button onclick="editTeam()" class="btn btn-outline btn-sm">✏️ Düzenle</button>
+                            <button onclick="deleteTeam()" class="btn btn-ghost btn-sm" style="color: var(--color-error);">🗑️ Sil</button>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- Members Section -->
+                <div class="glass-card">
+                    <div class="flex justify-between items-center" style="margin-bottom: var(--space-xl);">
+                        <h2>Takım Üyeleri</h2>
+                        ${canEdit ? `
+                            <button onclick="openAddMemberModal()" class="btn btn-primary btn-sm">
+                                ➕ Üye Ekle
+                            </button>
+                        ` : ''}
+                    </div>
+
+                    <div id="membersContainer">
+                        ${memberCount === 0 ?
+                    '<p class="text-secondary">Henüz takım üyesi yok.</p>' :
+                    renderMembersList(members, canEdit)
+                }
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderMembersList(members, canEdit) {
+            return members.map(m => `
+                <div class="glass-card" style="margin-bottom: var(--space-md);">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-md">
+                            <div style="
+                                width: 50px;
+                                height: 50px;
+                                border-radius: 50%;
+                                background: var(--gradient-primary);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                font-size: 1.5rem;
+                                font-weight: 700;
+                            ">
+                                ${m.user.userName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <h4 style="margin-bottom: var(--space-xs);">${m.user.userName}</h4>
+                                <p class="text-muted" style="margin: 0; font-size: var(--font-size-sm);">${m.user.email}</p>
+                            </div>
+                        </div>
+                        ${canEdit ? `
+                            <button onclick="removeMember(${m.memberId})" class="btn btn-ghost btn-sm" style="color: var(--color-error);">
+                                Çıkar
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Initialize debounced search function
+        const debouncedUserSearch = debounce(performUserSearch, 300);
+
+        function openAddMemberModal() {
+            const modalContent = `
+                <div>
+                    <div class="search-bar" style="margin-bottom: var(--space-md);">
+                        <input type="text" id="userSearchInput" class="form-input" placeholder="Kullanıcı adı ile ara..." oninput="debouncedUserSearch()">
+                        <span style="position: absolute; right: var(--space-md); top: 50%; transform: translateY(-50%);">🔍</span>
+                    </div>
+                    <div id="searchResults" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+            `;
+            const modal = new Modal('addMemberModal', 'Üye Ekle', modalContent);
+            modal.show();
+        }
+
+        async function performUserSearch() {
+            const query = document.getElementById('userSearchInput').value;
+            const resultsContainer = document.getElementById('searchResults');
+
+            if (query.length < 2) {
+                resultsContainer.innerHTML = '';
+                return;
+            }
+
+            try {
+                const users = await api.searchUsers(query);
+                resultsContainer.innerHTML = '';
+
+                if (users.length === 0) {
+                    resultsContainer.innerHTML = '<p class="text-muted">Kullanıcı bulunamadı.</p>';
+                    return;
+                }
+
+                users.forEach(user => {
+                    // Don't show users who are already members (need to check against currentTeam members)
+                    // We need latest member list for this, but simplistic approach:
+                    // Just add handling in backend or check if UI already shows them.
+                    // Ideally we pass members list to performUserSearch or fetch fresh.
+                    // For now, simple render:
+
+                    const userEl = document.createElement('div');
+                    userEl.className = 'glass-card';
+                    userEl.style.padding = 'var(--space-sm)';
+                    userEl.style.marginBottom = 'var(--space-xs)';
+                    userEl.style.cursor = 'pointer';
+                    userEl.style.display = 'flex';
+                    userEl.style.justifyContent = 'space-between';
+                    userEl.style.alignItems = 'center';
+
+                    userEl.innerHTML = `
+                        <span>${user.userName} (${user.email})</span>
+                        <button class="btn btn-primary btn-sm">Ekle</button>
+                    `;
+
+                    userEl.onclick = () => addMemberToTeam(user.id);
+                    resultsContainer.appendChild(userEl);
+                });
+            } catch (error) {
+                console.error('Search error:', error);
+            }
+        }
+
+        async function addMemberToTeam(userId) {
+            showLoading();
+            try {
+                await api.addTeamMember(teamId, userId);
+                closeModal('addMemberModal');
+                showToast('Üye başarıyla eklendi', 'success');
+                // Refresh team data
+                loadTeamDetail();
+            } catch (error) {
+                console.error('Error adding member:', error);
+
+                // Detailed error handling
+                if (error.response) {
+                    try {
+                        const errorData = await error.json(); // .json() is method
+                        if (errorData && errorData.error) {
+                            showToast('Hata: ' + errorData.error, 'error');
+                        } else {
+                            showToast('Üye eklenirken hata oluştu', 'error');
+                        }
+                    } catch (e) {
+                        showToast('Üye eklenirken hata oluştu', 'error');
+                    }
+                } else {
+                    showToast('Üye eklenirken hata oluştu', 'error');
+                }
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function editTeam() {
+            showToast('Takım düzenleme özelliği yakında eklenecek', 'info');
+        }
+
+        async function deleteTeam() {
+            if (!confirm('Bu takımı silmek istediğinizden emin misiniz?')) return;
+
+            showLoading();
+            try {
+                await api.deleteTeam(teamId);
+                showToast('Takım silindi', 'success');
+                setTimeout(() => window.location.href = 'teams.html', 1000);
+            } catch (error) {
+                console.error('Error deleting team:', error);
+                showToast('Takım silinirken hata oluştu', 'error');
+                hideLoading();
+            }
+        }
+
+        async function removeMember(memberId) {
+            if (!confirm('Bu üyeyi takımdan çıkarmak istediğinizden emin misiniz?')) return;
+
+            showLoading();
+            try {
+                await api.deleteTeamMember(memberId);
+                showToast('Üye çıkarıldı', 'success');
+                loadTeamDetail();
+            } catch (error) {
+                console.error('Error removing member:', error);
+                showToast('Üye çıkarılırken hata oluştu', 'error');
+                hideLoading();
+            }
+        }
+
+        loadTeamDetail();
+    </script>
+</body>
+
+</html>

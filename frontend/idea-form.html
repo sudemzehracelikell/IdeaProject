@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fikir Ekle/Düzenle - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl); max-width: 800px;">
+        <div class="glass-card">
+            <h1 id="formTitle">Yeni Fikir Ekle</h1>
+            <p class="text-secondary" style="margin-bottom: var(--space-2xl);">Fikrinizi paylaşın ve topluluğun
+                desteğini alın</p>
+
+            <form id="ideaForm" onsubmit="handleSubmit(event)">
+                <div class="form-group">
+                    <label class="form-label">Başlık *</label>
+                    <input type="text" class="form-input" name="title" required placeholder="Fikrinizin başlığı">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Kısa Açıklama *</label>
+                    <textarea class="form-textarea" name="shortDescription" required placeholder="Fikrinizin kısa özeti"
+                        style="min-height: 80px;"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Detaylı Açıklama *</label>
+                    <textarea class="form-textarea" name="description" required
+                        placeholder="Fikrinizin detaylı açıklaması" style="min-height: 200px;"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2">
+                    <div class="form-group">
+                        <label class="form-label">Kategori *</label>
+                        <select class="form-select" name="category" required id="categorySelect">
+                            <option value="">Kategori seçin</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Durum *</label>
+                        <select class="form-select" name="status" required id="statusSelect">
+                            <option value="">Durum seçin</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Takım</label>
+                    <select class="form-select" name="team" id="teamSelect">
+                        <option value="">Takım seçin (opsiyonel)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Etiketler</label>
+                    <input type="text" class="form-input" name="tags"
+                        placeholder="Etiketleri virgülle ayırın (örn: teknoloji, yenilik, yapay zeka)">
+                    <small class="text-muted">Virgülle ayırarak birden fazla etiket ekleyebilirsiniz</small>
+                </div>
+
+                <div class="flex gap-md" style="margin-top: var(--space-2xl);">
+                    <button type="submit" class="btn btn-primary">
+                        <span id="submitBtnText">Fikri Yayınla</span>
+                    </button>
+                    <a href="ideas.html" class="btn btn-ghost">İptal</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        // Require authentication
+        if (!auth.requireAuth()) {
+            // Will redirect
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const ideaId = urlParams.get('id');
+        const isEditMode = !!ideaId;
+
+        if (isEditMode) {
+            document.getElementById('formTitle').textContent = 'Fikri Düzenle';
+            document.getElementById('submitBtnText').textContent = 'Değişiklikleri Kaydet';
+        }
+
+        async function loadFormData() {
+            showLoading();
+            try {
+                // Load categories
+                const categories = await api.getCategories();
+                const categorySelect = document.getElementById('categorySelect');
+                categories.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = cat.name;
+                    categorySelect.appendChild(option);
+                });
+
+                // Load statuses
+                const statuses = await api.getStatuses();
+                const statusSelect = document.getElementById('statusSelect');
+                statuses.forEach(status => {
+                    const option = document.createElement('option');
+                    option.value = status.id;
+                    option.textContent = status.name;
+                    statusSelect.appendChild(option);
+                });
+
+                // Load teams
+                const teams = await api.getTeams();
+                const teamSelect = document.getElementById('teamSelect');
+                teams.forEach(team => {
+                    const option = document.createElement('option');
+                    option.value = team.id;
+                    option.textContent = team.teamName;
+                    teamSelect.appendChild(option);
+                });
+
+                // If edit mode, load idea data
+                if (isEditMode) {
+                    await loadIdeaData();
+                }
+            } catch (error) {
+                console.error('Error loading form data:', error);
+                showToast('Form verileri yüklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadIdeaData() {
+            try {
+                const idea = await api.getIdea(ideaId);
+
+                // Populate form
+                document.querySelector('[name="title"]').value = idea.Title;
+                document.querySelector('[name="shortDescription"]').value = idea.ShortDescription;
+                document.querySelector('[name="description"]').value = idea.Description;
+                document.querySelector('[name="category"]').value = idea.CategoryID?.id || '';
+                document.querySelector('[name="status"]').value = idea.StatusID?.id || '';
+                document.querySelector('[name="team"]').value = idea.TeamID?.id || '';
+
+                if (idea.Tags && idea.Tags.length > 0) {
+                    document.querySelector('[name="tags"]').value =
+                        idea.Tags.map(tag => tag.TagName).join(', ');
+                }
+            } catch (error) {
+                console.error('Error loading idea:', error);
+                showToast('Fikir yüklenirken hata oluştu', 'error');
+            }
+        }
+
+        async function handleSubmit(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            // Parse tags
+            const tagsString = formData.get('tags');
+            const tags = tagsString ? tagsString.split(',').map(t => t.trim()).filter(t => t) : [];
+
+            const ideaData = {
+                Title: formData.get('title'),
+                ShortDescription: formData.get('shortDescription'),
+                Description: formData.get('description'),
+                CategoryID: parseInt(formData.get('category')),
+                StatusID: parseInt(formData.get('status')),
+                CreaterID: auth.currentUser.id,
+                TeamID: formData.get('team') ? parseInt(formData.get('team')) : null,
+                Tags: tags.map(tagName => ({ TagName: tagName }))
+            };
+
+            console.log('Sending idea data:', ideaData);
+            console.log('Current user:', auth.currentUser);
+
+            showLoading();
+
+            try {
+                if (isEditMode) {
+                    await api.updateIdea(ideaId, ideaData);
+                    showToast('Fikir güncellendi!', 'success');
+                    setTimeout(() => window.location.href = `idea-detail.html?id=${ideaId}`, 1000);
+                } else {
+                    const newIdea = await api.createIdea(ideaData);
+                    showToast('Fikir oluşturuldu!', 'success');
+                    setTimeout(() => window.location.href = `idea-detail.html?id=${newIdea.IdeaID}`, 1000);
+                }
+            } catch (error) {
+                console.error('Error saving idea:', error);
+                showToast('Fikir kaydedilirken hata oluştu', 'error');
+                hideLoading();
+            }
+        }
+
+        loadFormData();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub Admin</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <!-- Header -->
+        <div class="glass-card" style="margin-bottom: var(--space-2xl);">
+            <h1>🛡️ Yönetici Paneli</h1>
+            <p class="text-secondary">Sistem yönetimi ve içerik kontrolü</p>
+        </div>
+
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-4" style="margin-bottom: var(--space-2xl);">
+            <div class="glass-card">
+                <div style="font-size: 2rem; margin-bottom: var(--space-sm);">📂</div>
+                <div class="stat-number" id="totalCategories">0</div>
+                <div class="stat-label">Kategori</div>
+            </div>
+            <div class="glass-card">
+                <div style="font-size: 2rem; margin-bottom: var(--space-sm);">📊</div>
+                <div class="stat-number" id="totalStatuses">0</div>
+                <div class="stat-label">Durum</div>
+            </div>
+            <div class="glass-card">
+                <div style="font-size: 2rem; margin-bottom: var(--space-sm);">👥</div>
+                <div class="stat-number" id="totalUsers">0</div>
+                <div class="stat-label">Kullanıcı</div>
+            </div>
+            <div class="glass-card">
+                <div style="font-size: 2rem; margin-bottom: var(--space-sm);">💡</div>
+                <div class="stat-number" id="totalIdeas">0</div>
+                <div class="stat-label">Fikir</div>
+            </div>
+        </div>
+
+        <!-- Management Sections -->
+        <div class="grid grid-cols-2" style="gap: var(--space-2xl);">
+            <!-- Category Management -->
+            <div class="glass-card">
+                <div class="flex justify-between items-center" style="margin-bottom: var(--space-lg);">
+                    <h2>📂 Kategori Yönetimi</h2>
+                    <button onclick="openAddCategoryModal()" class="btn btn-primary btn-sm">
+                        ➕ Yeni Kategori
+                    </button>
+                </div>
+                <div id="categoriesList" style="max-height: 400px; overflow-y: auto;">
+                    <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+                </div>
+            </div>
+
+            <!-- Status Management -->
+            <div class="glass-card">
+                <div class="flex justify-between items-center" style="margin-bottom: var(--space-lg);">
+                    <h2>📊 Durum Yönetimi</h2>
+                    <button onclick="openAddStatusModal()" class="btn btn-primary btn-sm">
+                        ➕ Yeni Durum
+                    </button>
+                </div>
+                <div id="statusesList" style="max-height: 400px; overflow-y: auto;">
+                    <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Management -->
+        <div class="glass-card" style="margin-top: var(--space-2xl);">
+            <h2 style="margin-bottom: var(--space-lg);">👥 Kullanıcı Yönetimi</h2>
+            <div id="usersList" class="grid grid-cols-3">
+                <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        // Require admin authentication
+        if (!auth.requireAuth() || !auth.isAdmin()) {
+            showToast('Bu sayfaya erişim yetkiniz yok!', 'error');
+            setTimeout(() => window.location.href = 'dashboard.html', 2000);
+        }
+
+        async function loadStats() {
+            try {
+                const [categories, statuses, users, ideas] = await Promise.all([
+                    api.getCategories(),
+                    api.getStatuses(),
+                    api.getUsers(),
+                    api.getIdeas()
+                ]);
+
+                document.getElementById('totalCategories').textContent = categories.length;
+                document.getElementById('totalStatuses').textContent = statuses.length;
+                document.getElementById('totalUsers').textContent = users.length;
+                document.getElementById('totalIdeas').textContent = ideas.length;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadCategories() {
+            const container = document.getElementById('categoriesList');
+            try {
+                const categories = await api.getCategories();
+                container.innerHTML = '';
+
+                if (categories.length === 0) {
+                    container.innerHTML = '<p class="text-secondary">Henüz kategori yok</p>';
+                } else {
+                    categories.forEach(cat => {
+                        const item = document.createElement('div');
+                        item.className = 'glass-card';
+                        item.style.marginBottom = 'var(--space-sm)';
+                        item.innerHTML = `
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h4>${cat.name}</h4>
+                                    <p class="text-secondary" style="font-size: 0.875rem;">${cat.description || 'Açıklama yok'}</p>
+                                </div>
+                                <button onclick="deleteCategory(${cat.id})" class="btn btn-ghost btn-sm" style="color: var(--color-error);">
+                                    🗑️
+                                </button>
+                            </div>
+                        `;
+                        container.appendChild(item);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading categories:', error);
+                container.innerHTML = '<p class="text-error">Kategoriler yüklenirken hata oluştu</p>';
+            }
+        }
+
+        async function loadStatuses() {
+            const container = document.getElementById('statusesList');
+            try {
+                const statuses = await api.getStatuses();
+                container.innerHTML = '';
+
+                if (statuses.length === 0) {
+                    container.innerHTML = '<p class="text-secondary">Henüz durum yok</p>';
+                } else {
+                    statuses.forEach(status => {
+                        const item = document.createElement('div');
+                        item.className = 'glass-card';
+                        item.style.marginBottom = 'var(--space-sm)';
+                        item.innerHTML = `
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="badge ${getStatusBadgeClass(status.name)}">${status.name}</span>
+                                </div>
+                                <button onclick="deleteStatus(${status.id})" class="btn btn-ghost btn-sm" style="color: var(--color-error);">
+                                    🗑️
+                                </button>
+                            </div>
+                        `;
+                        container.appendChild(item);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading statuses:', error);
+                container.innerHTML = '<p class="text-error">Durumlar yüklenirken hata oluştu</p>';
+            }
+        }
+
+        async function loadUsers() {
+            const container = document.getElementById('usersList');
+            try {
+                const users = await api.getUsers();
+                container.innerHTML = '';
+
+                users.forEach(user => {
+                    container.appendChild(createUserCard(user));
+                });
+            } catch (error) {
+                console.error('Error loading users:', error);
+                container.innerHTML = '<p class="text-error">Kullanıcılar yüklenirken hata oluştu</p>';
+            }
+        }
+
+        function openAddCategoryModal() {
+            const modalContent = `
+                <form onsubmit="createCategory(event)">
+                    <div class="form-group">
+                        <label class="form-label">Kategori Adı *</label>
+                        <input type="text" class="form-input" name="name" required placeholder="Örn: Teknoloji, Eğitim">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Açıklama</label>
+                        <textarea class="form-textarea" name="description" placeholder="Kategori açıklaması (opsiyonel)" style="min-height: 80px;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Kategori Oluştur</button>
+                </form>
+            `;
+            const modal = new Modal('addCategoryModal', 'Yeni Kategori Ekle', modalContent);
+            modal.show();
+        }
+
+        async function createCategory(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            showLoading();
+            try {
+                await api.createCategory({
+                    name: formData.get('name'),
+                    description: formData.get('description') || ''
+                });
+                closeModal('addCategoryModal');
+                showToast('Kategori oluşturuldu!', 'success');
+                await loadCategories();
+                await loadStats();
+            } catch (error) {
+                console.error('Error creating category:', error);
+                showToast('Kategori oluşturulurken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function deleteCategory(id) {
+            if (!confirm('Bu kategoriyi silmek istediğinizden emin misiniz?')) return;
+
+            showLoading();
+            try {
+                await api.deleteCategory(id);
+                showToast('Kategori silindi', 'success');
+                await loadCategories();
+                await loadStats();
+            } catch (error) {
+                console.error('Error deleting category:', error);
+                showToast('Kategori silinirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openAddStatusModal() {
+            const modalContent = `
+                <form onsubmit="createStatus(event)">
+                    <div class="form-group">
+                        <label class="form-label">Durum Adı *</label>
+                        <input type="text" class="form-input" name="name" required placeholder="Örn: Draft, Public, Closed">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Durum Oluştur</button>
+                </form>
+            `;
+            const modal = new Modal('addStatusModal', 'Yeni Durum Ekle', modalContent);
+            modal.show();
+        }
+
+        async function createStatus(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            showLoading();
+            try {
+                await api.createStatus({ name: formData.get('name') });
+                closeModal('addStatusModal');
+                showToast('Durum oluşturuldu!', 'success');
+                await loadStatuses();
+                await loadStats();
+            } catch (error) {
+                console.error('Error creating status:', error);
+                showToast('Durum oluşturulurken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function deleteStatus(id) {
+            if (!confirm('Bu durumu silmek istediğinizden emin misiniz?')) return;
+
+            showLoading();
+            try {
+                await api.deleteStatus(id);
+                showToast('Durum silindi', 'success');
+                await loadStatuses();
+                await loadStats();
+            } catch (error) {
+                console.error('Error deleting status:', error);
+                showToast('Durum silinirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Initialize
+        async function init() {
+            await loadStats();
+            await loadCategories();
+            await loadStatuses();
+            await loadUsers();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

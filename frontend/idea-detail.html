@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fikir Detayı - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <div id="ideaContent">
+            <div class="spinner" style="margin: var(--space-3xl) auto;"></div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const ideaId = urlParams.get('id');
+
+        if (!ideaId) {
+            window.location.href = 'ideas.html';
+        }
+
+        let isTeamMember = false;
+
+        async function loadIdeaDetail() {
+            showLoading();
+            try {
+                currentIdea = await api.getIdea(ideaId);
+
+                // Check if user is member of the idea's team
+                if (auth.isAuthenticated() && currentIdea.TeamID) {
+                    try {
+                        const team = await api.getTeam(currentIdea.TeamID.id);
+                        // Fetch user's team membership status or check if user ID is in team members
+                        // api.getTeam returns team with teamMember list (IDs)
+                        // But we need to be sure. Let's assume team.teamMember is array of IDs.
+                        // Wait, looking at team-detail.html, team.teamMember IS array of IDs.
+
+                        // We need to know if auth.currentUser.id corresponds to one of the TeamMember IDs
+                        // This requires fetching TeamMember objects or checking if we can resolve user ID.
+                        // Actually, TeamMember model links user. 
+                        // So team.teamMember is list of TeamMember PKs.
+                        // This is hard to check without fetching all members.
+
+                        // ALTERNATIVE: Use api.getTeams(userId) and check if teamId is in there.
+                        const myTeams = await api.getTeams(auth.currentUser.id);
+                        isTeamMember = myTeams.some(t => t.id === currentIdea.TeamID.id);
+
+                    } catch (e) {
+                        console.error('Error checking team membership:', e);
+                    }
+                }
+
+                displayIdeaDetail();
+                loadComments();
+                loadUpdates();
+            } catch (error) {
+                console.error('Error loading idea:', error);
+                document.getElementById('ideaContent').innerHTML =
+                    '<div class="glass-card"><p class="text-error">Fikir yüklenirken hata oluştu</p></div>';
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function displayIdeaDetail() {
+            const container = document.getElementById('ideaContent');
+            const statusClass = getStatusBadgeClass(currentIdea.StatusID?.name || 'Draft');
+
+            const canEdit = auth.isAuthenticated() &&
+                (auth.isAdmin() || auth.currentUser.id === currentIdea.CreaterID || isTeamMember);
+
+            container.innerHTML = `
+                <!-- Header -->
+                <div class="flex justify-between items-start" style="margin-bottom: var(--space-2xl);">
+                    <div style="flex: 1;">
+                        <div class="flex gap-md" style="margin-bottom: var(--space-md);">
+                            <span class="badge ${statusClass}">${currentIdea.StatusID?.name || 'Draft'}</span>
+                            <span class="badge badge-primary">${currentIdea.CategoryID?.name || 'Genel'}</span>
+                        </div>
+                        <h1>${currentIdea.Title}</h1>
+                        <p class="text-secondary">${formatDate(currentIdea.CreateDate)}</p>
+                    </div>
+                    ${canEdit ? `
+                        <div class="flex gap-sm">
+                            <a href="idea-form.html?id=${ideaId}" class="btn btn-outline btn-sm">✏️ Düzenle</a>
+                            <button onclick="deleteIdea()" class="btn btn-ghost btn-sm" style="color: var(--color-error);">🗑️ Sil</button>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- Main Content -->
+                <div class="grid grid-cols-3" style="gap: var(--space-2xl);">
+                    <!-- Left Column -->
+                    <div style="grid-column: span 2;">
+                        <!-- Description -->
+                        <div class="glass-card" style="margin-bottom: var(--space-xl);">
+                            <h2 style="margin-bottom: var(--space-lg);">Açıklama</h2>
+                            <p style="white-space: pre-wrap;">${currentIdea.Description}</p>
+                            
+                            ${currentIdea.Tags && currentIdea.Tags.length > 0 ? `
+                                <div style="margin-top: var(--space-xl);">
+                                    <h3 style="margin-bottom: var(--space-md);">Etiketler</h3>
+                                    <div class="flex gap-sm" style="flex-wrap: wrap;">
+                                        ${currentIdea.Tags.map(tag => `<span class="badge">#${tag.TagName}</span>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Comments Section -->
+                        <div class="glass-card">
+                            <h2 style="margin-bottom: var(--space-lg);">Yorumlar</h2>
+                            
+                            ${auth.isAuthenticated() ? `
+                                <form onsubmit="addComment(event)" style="margin-bottom: var(--space-xl);">
+                                    <div class="form-group">
+                                        <textarea class="form-textarea" name="comment" required placeholder="Yorumunuzu yazın..."></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-sm">Yorum Ekle</button>
+                                </form>
+                            ` : '<p class="text-secondary">Yorum yapmak için giriş yapın.</p>'}
+                            
+                            <div id="commentsContainer"></div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div>
+                        <!-- Vote Card -->
+                        <div class="glass-card" style="margin-bottom: var(--space-xl); text-align: center;">
+                            <div style="font-size: 3rem; margin-bottom: var(--space-md);">⭐</div>
+                            <div class="stat-number" style="font-size: var(--font-size-4xl);">${currentIdea.VotesCount || 0}</div>
+                            <div class="stat-label" style="margin-bottom: var(--space-lg);">Oy</div>
+                            ${auth.isAuthenticated() ? `
+                                <button onclick="voteIdea()" class="btn btn-primary" style="width: 100%;">
+                                    Oy Ver
+                                </button>
+                            ` : ''}
+                        </div>
+
+                        <!-- Team Info -->
+                        ${currentIdea.TeamID ? `
+                            <div class="glass-card" style="margin-bottom: var(--space-xl);">
+                                <h3 style="margin-bottom: var(--space-md);">Takım</h3>
+                                <p>${currentIdea.TeamID.teamName}</p>
+                            </div>
+                        ` : ''}
+
+                        <!-- Updates Timeline -->
+                        <div class="glass-card">
+                            <h3 style="margin-bottom: var(--space-lg);">Güncellemeler</h3>
+                            
+                            ${auth.isAuthenticated() && canEdit ? `
+                                <button onclick="openAddUpdateModal()" class="btn btn-outline btn-sm" style="width: 100%; margin-bottom: var(--space-lg);">
+                                    ➕ Güncelleme Ekle
+                                </button>
+                            ` : ''}
+                            
+                            <div id="updatesContainer"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadComments() {
+            const container = document.getElementById('commentsContainer');
+            try {
+                const comments = await api.getComments(ideaId);
+
+                container.innerHTML = '';
+
+                if (comments.length === 0) {
+                    container.innerHTML = '<p class="text-secondary">Henüz yorum yok.</p>';
+                } else {
+                    comments.forEach(comment => {
+                        container.appendChild(createCommentElement(comment));
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading comments:', error);
+                container.innerHTML = '<p class="text-error">Yorumlar yüklenemedi</p>';
+            }
+        }
+
+        async function loadUpdates() {
+            const container = document.getElementById('updatesContainer');
+            try {
+                const updates = await api.getUpdates(ideaId);
+
+                container.innerHTML = '';
+
+                if (updates.length === 0) {
+                    container.innerHTML = '<p class="text-secondary">Henüz güncelleme yok.</p>';
+                } else {
+                    updates.forEach(update => {
+                        container.appendChild(createUpdateElement(update));
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading updates:', error);
+                container.innerHTML = '<p class="text-error">Güncellemeler yüklenemedi</p>';
+            }
+        }
+
+        async function addComment(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            showLoading();
+            try {
+                await api.createComment(ideaId, {
+                    text: formData.get('comment'),
+                    user_id: auth.currentUser.id
+                });
+
+                e.target.reset();
+                showToast('Yorum eklendi', 'success');
+                loadComments();
+            } catch (error) {
+                console.error('Error adding comment:', error);
+                showToast('Yorum eklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function voteIdea() {
+            showLoading();
+            try {
+                await api.voteIdea(ideaId, {
+                    user_id: auth.currentUser.id,
+                    value: 1
+                });
+
+                showToast('Oy verildi!', 'success');
+                loadIdeaDetail();
+            } catch (error) {
+                console.error('Error voting:', error);
+                showToast('Oy verilirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openAddUpdateModal() {
+            const modalContent = `
+                <form onsubmit="addUpdate(event)">
+                    <div class="form-group">
+                        <label class="form-label">Durum</label>
+                        <select class="form-select" name="state" required>
+                            <option value="IN_PROGRESS">Devam Ediyor</option>
+                            <option value="COMPLETED">Tamamlandı</option>
+                            <option value="WAITING">Beklemede</option>
+                            <option value="CANCELLED">İptal Edildi</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Açıklama</label>
+                        <textarea class="form-textarea" name="description" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Güncelleme Ekle</button>
+                </form>
+            `;
+
+            const modal = new Modal('addUpdateModal', 'Yeni Güncelleme', modalContent);
+            modal.show();
+        }
+
+        async function addUpdate(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            showLoading();
+            try {
+                await api.createUpdate(ideaId, {
+                    state: formData.get('state'),
+                    description: formData.get('description'),
+                    user_id: auth.currentUser.id
+                });
+
+                closeModal('addUpdateModal');
+                showToast('Güncelleme eklendi', 'success');
+                loadUpdates();
+            } catch (error) {
+                console.error('Error adding update:', error);
+                showToast('Güncelleme eklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function deleteIdea() {
+            if (!confirm('Bu fikri silmek istediğinizden emin misiniz?')) return;
+
+            showLoading();
+            try {
+                await api.deleteIdea(ideaId);
+                showToast('Fikir silindi', 'success');
+                setTimeout(() => window.location.href = 'ideas.html', 1000);
+            } catch (error) {
+                console.error('Error deleting idea:', error);
+                showToast('Fikir silinirken hata oluştu', 'error');
+                hideLoading();
+            }
+        }
+
+        loadIdeaDetail();
+    </script>
+</body>
+
+</html>

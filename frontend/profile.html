@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profil - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <div class="grid grid-cols-3" style="gap: var(--space-2xl);">
+            <!-- Profile Info -->
+            <div>
+                <div class="glass-card" style="text-align: center;">
+                    <div style="
+                        width: 120px;
+                        height: 120px;
+                        border-radius: 50%;
+                        background: var(--gradient-primary);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 3rem;
+                        font-weight: 700;
+                        margin: 0 auto var(--space-lg);
+                    " id="profileAvatar">
+                        U
+                    </div>
+                    <h2 id="profileName">Kullanıcı</h2>
+                    <p class="text-secondary" id="profileEmail">email@example.com</p>
+                    <span class="badge badge-primary" id="profileRole"
+                        style="margin-top: var(--space-md);">Katılımcı</span>
+
+                    <button onclick="openEditProfileModal()" class="btn btn-outline"
+                        style="width: 100%; margin-top: var(--space-xl);">
+                        ✏️ Profili Düzenle
+                    </button>
+                </div>
+            </div>
+
+            <!-- User Activity -->
+            <div style="grid-column: span 2;">
+                <div class="glass-card" style="margin-bottom: var(--space-xl);">
+                    <h2 style="margin-bottom: var(--space-lg);">İstatistikler</h2>
+                    <div class="grid grid-cols-3">
+                        <div style="text-align: center;">
+                            <div class="stat-number" id="userIdeasCount">0</div>
+                            <div class="stat-label">Fikir</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div class="stat-number" id="userVotesCount">0</div>
+                            <div class="stat-label">Aldığı Oy</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div class="stat-number" id="userCommentsCount">0</div>
+                            <div class="stat-label">Yorum</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <h2 style="margin-bottom: var(--space-lg);">Fikirlerim</h2>
+                    <div id="userIdeasContainer">
+                        <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        if (!auth.requireAuth()) {
+            // Will redirect
+        }
+
+        async function loadProfile() {
+            const user = auth.currentUser;
+
+            // Update profile info
+            document.getElementById('profileAvatar').textContent = user.userName.charAt(0).toUpperCase();
+            document.getElementById('profileName').textContent = user.userName;
+            document.getElementById('profileEmail').textContent = user.email;
+            document.getElementById('profileRole').textContent = getRoleName(user.role);
+
+            // Load user's ideas
+            await loadUserIdeas();
+        }
+
+        async function loadUserIdeas() {
+            const container = document.getElementById('userIdeasContainer');
+
+            try {
+                const allIdeas = await api.getIdeas();
+
+                // Fetch user's teams to filter team ideas
+                let myTeamIds = [];
+                try {
+                    const myTeams = await api.getTeams(auth.currentUser.id);
+                    myTeamIds = myTeams.map(t => t.id);
+                } catch (e) {
+                    console.error("Failed to load teams", e);
+                }
+
+                // Filter ideas: Created by user OR in one of user's teams
+                const userIdeas = allIdeas.filter(idea => {
+                    const isCreator = idea.CreaterID?.id == auth.currentUser.id;
+                    const isTeamIdea = idea.TeamID && myTeamIds.includes(idea.TeamID.id);
+                    return isCreator || isTeamIdea;
+                });
+
+                // Update stats
+                document.getElementById('userIdeasCount').textContent = userIdeas.length;
+                const totalVotes = userIdeas.reduce((sum, idea) => sum + (idea.VotesCount || 0), 0);
+                document.getElementById('userVotesCount').textContent = totalVotes;
+                const totalComments = userIdeas.reduce((sum, idea) => sum + (idea.CommentsCount || 0), 0);
+                document.getElementById('userCommentsCount').textContent = totalComments;
+
+                container.innerHTML = '';
+
+                if (userIdeas.length === 0) {
+                    container.appendChild(createEmptyState('Henüz fikir eklemediniz', '💡'));
+                } else {
+                    userIdeas.forEach(idea => {
+                        const card = createIdeaCard(idea);
+                        container.appendChild(card);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading user ideas:', error);
+                container.innerHTML = '<p class="text-error">Fikirler yüklenirken hata oluştu</p>';
+            }
+        }
+
+        function openEditProfileModal() {
+            const user = auth.currentUser;
+
+            const modalContent = `
+                <form onsubmit="updateProfile(event)">
+                    <div class="form-group">
+                        <label class="form-label">Kullanıcı Adı</label>
+                        <input type="text" class="form-input" name="userName" value="${user.userName}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">E-posta</label>
+                        <input type="email" class="form-input" name="email" value="${user.email}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Yeni Şifre (boş bırakın değiştirmek istemiyorsanız)</label>
+                        <input type="password" class="form-input" name="password" placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Güncelle</button>
+                </form>
+            `;
+
+            const modal = new Modal('editProfileModal', 'Profili Düzenle', modalContent);
+            modal.show();
+        }
+
+        async function updateProfile(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            const updateData = {
+                userName: formData.get('userName'),
+                email: formData.get('email'),
+                role: auth.currentUser.role
+            };
+
+            const password = formData.get('password');
+            if (password) {
+                updateData.password = password;
+            } else {
+                updateData.password = auth.currentUser.password;
+            }
+
+            showLoading();
+            try {
+                await api.updateUser(auth.currentUser.id, updateData);
+                auth.saveUser({ ...auth.currentUser, ...updateData });
+
+                closeModal('editProfileModal');
+                showToast('Profil güncellendi!', 'success');
+                loadProfile();
+            } catch (error) {
+                console.error('Error updating profile:', error);
+                showToast('Profil güncellenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        loadProfile();
+    </script>
+</body>
+
+</html>

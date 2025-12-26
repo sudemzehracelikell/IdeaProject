@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Takımlar - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu"></ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
+        <div class="flex justify-between items-center" style="margin-bottom: var(--space-2xl);">
+            <div>
+                <h1>Takımlar</h1>
+                <p class="text-secondary">Takımları keşfedin ve işbirliği yapın</p>
+            </div>
+            <button onclick="openCreateTeamModal()" class="btn btn-primary" id="createTeamBtn">
+                <span>➕</span> Yeni Takım Oluştur
+            </button>
+        </div>
+
+        <div class="grid grid-cols-3" id="teamsContainer">
+            <div class="glass-card">
+                <div class="spinner" style="margin: var(--space-xl) auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        if (!auth.isAuthenticated()) {
+            document.getElementById('createTeamBtn').style.display = 'none';
+        }
+
+        async function loadTeams() {
+            showLoading();
+            const container = document.getElementById('teamsContainer');
+
+            try {
+                // Filter teams by current user
+                const teams = await api.getTeams(auth.currentUser.id);
+
+                container.innerHTML = '';
+
+                if (teams.length === 0) {
+                    container.appendChild(createEmptyState('Henüz bir takıma üye değilsiniz.', '👥'));
+                } else {
+                    teams.forEach(team => {
+                        container.appendChild(createTeamCard(team));
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading teams:', error);
+                container.innerHTML = '<div class="glass-card"><p class="text-error">Takımlar yüklenirken hata oluştu</p></div>';
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openCreateTeamModal() {
+            const modalContent = `
+                <form onsubmit="createTeam(event)">
+                    <div class="form-group">
+                        <label class="form-label">Takım Adı</label>
+                        <input type="text" class="form-input" name="teamName" required placeholder="Takım adını girin">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Takım Oluştur</button>
+                </form>
+            `;
+
+            const modal = new Modal('createTeamModal', 'Yeni Takım Oluştur', modalContent);
+            modal.show();
+        }
+
+        async function createTeam(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            showLoading();
+            try {
+                await api.createTeam({
+                    teamName: formData.get('teamName'),
+                    creator_id: auth.currentUser.id
+                });
+
+                closeModal('createTeamModal');
+
+                // Check if user is Participant and promote to Team Leader (Role 3)
+                if (auth.isParticipant()) {
+                    try {
+                        const currentUser = auth.currentUser;
+                        const updatedUser = { ...currentUser, role: 3 };
+
+                        // Update in backend
+                        await api.updateUser(currentUser.id, updatedUser);
+
+                        // Update local auth
+                        auth.saveUser(updatedUser);
+
+                        showToast('Takım oluşturuldu! Tebrikler, "Takım Lideri" seviyesine yükseldiniz. 🚀', 'success');
+
+                        // Reload to reflect permissions
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                        return; // Stop further execution as page will reload
+                    } catch (roleError) {
+                        console.error('Role update error:', roleError);
+                        showToast('Takım oluşturuldu fakat rolünüz güncellenemedi.', 'warning');
+                    }
+                } else {
+                    showToast('Takım oluşturuldu!', 'success');
+                }
+
+                loadTeams();
+            } catch (error) {
+                console.error('Error creating team:', error);
+                showToast('Takım oluşturulurken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function viewTeam(teamId) {
+            showToast('Takım detay sayfası yakında eklenecek', 'info');
+        }
+
+        loadTeams();
+    </script>
+</body>
+
+</html>

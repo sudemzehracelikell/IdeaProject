@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giriş Yap / Kayıt Ol - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="auth-container">
+        <div class="auth-visual">
+            <div class="auth-visual-content">
+                <h1 class="navbar-brand" style="font-size: var(--font-size-4xl);">IdeaHub</h1>
+                <p
+                    style="font-size: var(--font-size-xl); color: var(--color-text-secondary); margin-top: var(--space-lg);">
+                    Fikirlerinizi paylaşın ve harika projeler geliştirin
+                </p>
+            </div>
+        </div>
+
+        <div class="auth-forms">
+            <!-- Login Form -->
+            <div id="loginForm" class="auth-form-container active">
+                <div class="glass-card" style="max-width: 450px; margin: 0 auto;">
+                    <h2 style="margin-bottom: var(--space-sm);">Hoş Geldiniz</h2>
+                    <p class="text-secondary" style="margin-bottom: var(--space-2xl);">Hesabınıza giriş yapın</p>
+
+                    <form id="loginFormElement" onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label class="form-label">E-posta</label>
+                            <input type="email" class="form-input" name="email" required placeholder="ornek@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Şifre</label>
+                            <input type="password" class="form-input" name="password" required placeholder="••••••••">
+                        </div>
+
+
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--space-lg);">
+                            Giriş Yap
+                        </button>
+                    </form>
+
+                    <div style="text-align: center; margin-top: var(--space-xl);">
+                        <p class="text-secondary">
+                            Hesabınız yok mu?
+                            <a href="#" onclick="switchToRegister(event)"
+                                style="color: var(--color-primary-light); font-weight: 600;">
+                                Kayıt Olun
+                            </a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Register Form -->
+            <div id="registerForm" class="auth-form-container">
+                <div class="glass-card" style="max-width: 450px; margin: 0 auto;">
+                    <h2 style="margin-bottom: var(--space-sm);">Hesap Oluştur</h2>
+                    <p class="text-secondary" style="margin-bottom: var(--space-2xl);">IdeaHub'a katılın</p>
+
+                    <form id="registerFormElement" onsubmit="handleRegister(event)">
+                        <div class="form-group">
+                            <label class="form-label">Kullanıcı Adı</label>
+                            <input type="text" class="form-input" name="userName" required
+                                placeholder="Kullanıcı adınız">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">E-posta</label>
+                            <input type="email" class="form-input" name="email" required placeholder="ornek@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Şifre</label>
+                            <input type="password" class="form-input" name="password" required placeholder="••••••••"
+                                minlength="6">
+                        </div>
+
+                        <!-- Role selection removed, default is Participant -->
+                        <!-- 
+                        <div class="form-group">
+                            <label class="form-label">Rol</label>
+                            <select class="form-select" name="role" required>
+                                <option value="2">Katılımcı</option>
+                                <option value="3">Takım Lideri</option>
+                                <option value="4">Hakem</option>
+                            </select>
+                        </div>
+                        -->
+
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--space-lg);">
+                            Kayıt Ol
+                        </button>
+                    </form>
+
+                    <div style="text-align: center; margin-top: var(--space-xl);">
+                        <p class="text-secondary">
+                            Zaten hesabınız var mı?
+                            <a href="#" onclick="switchToLogin(event)"
+                                style="color: var(--color-primary-light); font-weight: 600;">
+                                Giriş Yapın
+                            </a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        function switchToRegister(e) {
+            e.preventDefault();
+            document.getElementById('loginForm').classList.remove('active');
+            document.getElementById('registerForm').classList.add('active');
+        }
+
+        function switchToLogin(e) {
+            e.preventDefault();
+            document.getElementById('registerForm').classList.remove('active');
+            document.getElementById('loginForm').classList.add('active');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const email = formData.get('email');
+            const password = formData.get('password');
+
+            showLoading();
+
+            try {
+                // Get all users and find matching email
+                const users = await api.getUsers();
+                const user = users.find(u => u.email === email && u.password === password);
+
+                if (user) {
+                    auth.saveUser(user);
+                    showToast('Giriş başarılı! Yönlendiriliyorsunuz...', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'dashboard.html';
+                    }, 1000);
+                } else {
+                    showToast('E-posta veya şifre hatalı!', 'error');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showToast('Giriş yapılırken bir hata oluştu. Backend sunucusunun çalıştığından emin olun.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            const userData = {
+                userName: formData.get('userName'),
+                email: formData.get('email'),
+                password: formData.get('password'),
+                role: 2 // Default to Participant
+            };
+
+            showLoading();
+
+            try {
+                const newUser = await api.createUser(userData);
+                showToast('Kayıt başarılı! Giriş yapabilirsiniz.', 'success');
+                setTimeout(() => {
+                    switchToLogin(new Event('click'));
+                    document.getElementById('loginFormElement').querySelector('[name="email"]').value = userData.email;
+                }, 1500);
+            } catch (error) {
+                console.error('Register error:', error);
+                showToast('Kayıt olurken bir hata oluştu. Lütfen tekrar deneyin.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Redirect if already logged in
+        if (auth.isAuthenticated()) {
+            window.location.href = 'dashboard.html';
+        }
+    </script>
+
+    <style>
+        .auth-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            min-height: 100vh;
+        }
+
+        .auth-visual {
+            background: var(--gradient-hero);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-2xl);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-visual::before {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            top: -250px;
+            right: -250px;
+        }
+
+        .auth-visual::after {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            bottom: -150px;
+            left: -150px;
+        }
+
+        .auth-visual-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+        }
+
+        .auth-forms {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-2xl);
+        }
+
+        .auth-form-container {
+            display: none;
+            width: 100%;
+            animation: fadeIn var(--transition-base);
+        }
+
+        .auth-form-container.active {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .auth-container {
+                grid-template-columns: 1fr;
+            }
+
+            .auth-visual {
+                display: none;
+            }
+        }
+    </style>
+</body>
+
+</html>
