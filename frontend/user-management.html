@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kullanıcı Yönetimi - IdeaHub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <a href="index.html" class="navbar-brand">IdeaHub</a>
+            <ul class="navbar-menu" id="navbarMenu">
+                <!-- Will be populated by JavaScript -->
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container" style="max-width: 1200px; padding: var(--space-2xl) var(--space-lg);">
+            <!-- Header -->
+            <div style="margin-bottom: var(--space-2xl);">
+                <h1 style="margin-bottom: var(--space-sm);">Kullanıcı Yönetimi</h1>
+                <p class="text-secondary">Kullanıcı rollerini yönetin ve düzenleyin</p>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="glass-card" style="margin-bottom: var(--space-xl); padding: var(--space-lg);">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <input type="text" id="searchInput" class="form-input"
+                        placeholder="Kullanıcı ara (isim veya email)...">
+                </div>
+            </div>
+
+            <!-- Users Table -->
+            <div class="glass-card">
+                <div style="overflow-x: auto;">
+                    <table class="users-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Kullanıcı Adı</th>
+                                <th>Email</th>
+                                <th>Mevcut Rol</th>
+                                <th>Rol Değiştir</th>
+                                <th>İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="empty-state" style="display: none;">
+                <p>Kullanıcı bulunamadı</p>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+    <script src="components.js"></script>
+    <script>
+        let allUsers = [];
+
+        // Check if user is admin
+        if (!auth.isAuthenticated() || !auth.isAdmin()) {
+            showToast('Bu sayfaya erişim yetkiniz yok!', 'error');
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 1500);
+        }
+
+        // Load users
+        async function loadUsers() {
+            showLoading();
+            try {
+                allUsers = await api.getUsers();
+                displayUsers(allUsers);
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showToast('Kullanıcılar yüklenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Display users
+        function displayUsers(users) {
+            const tbody = document.getElementById('usersTableBody');
+            const emptyState = document.getElementById('emptyState');
+
+            if (users.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.id}</td>
+                    <td>${user.userName}</td>
+                    <td>${user.email}</td>
+                    <td>
+                        <span class="badge ${getRoleBadgeClass(user.role)}">
+                            ${getRoleName(user.role)}
+                        </span>
+                    </td>
+                    <td>
+                        <select class="form-select" id="roleSelect_${user.id}" onchange="handleRoleChange(${user.id})">
+                            <option value="1" ${user.role === 1 ? 'selected' : ''}>Admin</option>
+                            <option value="2" ${user.role === 2 ? 'selected' : ''}>Katılımcı</option>
+                            <option value="3" ${user.role === 3 ? 'selected' : ''}>Takım Lideri</option>
+                            <option value="4" ${user.role === 4 ? 'selected' : ''}>Hakem</option>
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="saveRoleChange(${user.id})">
+                            Kaydet
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Get role badge class
+        function getRoleBadgeClass(roleId) {
+            const badgeMap = {
+                1: 'badge-error',    // Admin - red
+                2: 'badge-primary',  // Participant - blue
+                3: 'badge-warning',  // Team Leader - yellow
+                4: 'badge-success'   // Judge - green
+            };
+            return badgeMap[roleId] || 'badge';
+        }
+
+        // Handle role change
+        let roleChanges = {};
+
+        function handleRoleChange(userId) {
+            const select = document.getElementById(`roleSelect_${userId}`);
+            const newRole = parseInt(select.value);
+            roleChanges[userId] = newRole;
+        }
+
+        // Save role change
+        async function saveRoleChange(userId) {
+            if (!roleChanges[userId]) {
+                showToast('Rol değişikliği yapılmadı', 'warning');
+                return;
+            }
+
+            const newRole = roleChanges[userId];
+            const user = allUsers.find(u => u.id === userId);
+
+            if (!user) {
+                showToast('Kullanıcı bulunamadı', 'error');
+                return;
+            }
+
+            // Prevent admin from changing their own role
+            if (auth.currentUser.id === userId) {
+                showToast('Kendi rolünüzü değiştiremezsiniz!', 'error');
+                return;
+            }
+
+            showLoading();
+            try {
+                await api.updateUserRole(userId, newRole, auth.currentUser.email);
+                showToast(`${user.userName} kullanıcısının rolü güncellendi!`, 'success');
+                delete roleChanges[userId];
+                await loadUsers(); // Reload to show updated data
+            } catch (error) {
+                console.error('Error updating role:', error);
+                showToast('Rol güncellenirken hata oluştu', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filtered = allUsers.filter(user =>
+                user.userName.toLowerCase().includes(searchTerm) ||
+                user.email.toLowerCase().includes(searchTerm)
+            );
+            displayUsers(filtered);
+        });
+
+        // Initialize
+        loadUsers();
+    </script>
+
+    <style>
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .users-table thead {
+            background: var(--color-surface-elevated);
+        }
+
+        .users-table th {
+            padding: var(--space-md);
+            text-align: left;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            border-bottom: 2px solid var(--color-border);
+        }
+
+        .users-table td {
+            padding: var(--space-md);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .users-table tbody tr:hover {
+            background: var(--color-surface-elevated);
+        }
+
+        .users-table .form-select {
+            min-width: 150px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: var(--space-2xl);
+            color: var(--color-text-secondary);
+        }
+    </style>
+</body>
+
+</html>

@@ -19,7 +19,7 @@
     <div class="container" style="padding-top: var(--space-2xl); padding-bottom: var(--space-3xl);">
         <!-- Header -->
         <div class="glass-card" style="margin-bottom: var(--space-2xl);">
-            <h1>🛡️ Yönetici Paneli</h1>
+            <h1> Yönetici Paneli</h1>
             <p class="text-secondary">Sistem yönetimi ve içerik kontrolü</p>
         </div>
 
@@ -92,7 +92,7 @@
     <script src="components.js"></script>
     <script>
         // Require admin authentication
-        if (!auth.requireAuth() || !auth.isAdmin()) {
+        if (!auth.requireAuth()) {
             showToast('Bu sayfaya erişim yetkiniz yok!', 'error');
             setTimeout(() => window.location.href = 'dashboard.html', 2000);
         }
@@ -167,7 +167,7 @@
                                     <span class="badge ${getStatusBadgeClass(status.name)}">${status.name}</span>
                                 </div>
                                 <button onclick="deleteStatus(${status.id})" class="btn btn-ghost btn-sm" style="color: var(--color-error);">
-                                    🗑️
+                                    ️
                                 </button>
                             </div>
                         `;

@@ -172,11 +172,13 @@ function updateNavigation() {
     if (!navbarMenu) return;
 
     if (auth.isAuthenticated()) {
+        const adminLink = auth.isAdmin() ? '<li><a href="user-management.html" class="navbar-link">Kullanıcı Yönetimi</a></li>' : '';
         navbarMenu.innerHTML = `
             <li><a href="index.html" class="navbar-link">Ana Sayfa</a></li>
             <li><a href="dashboard.html" class="navbar-link">Dashboard</a></li>
             <li><a href="ideas.html" class="navbar-link">Fikirler</a></li>
             <li><a href="teams.html" class="navbar-link">Takımlar</a></li>
+            ${adminLink}
             <li><a href="profile.html" class="navbar-link">Profil</a></li>
             <li><button onclick="auth.logout()" class="btn btn-ghost btn-sm">Çıkış Yap</button></li>
         `;

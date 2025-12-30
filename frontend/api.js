@@ -73,10 +73,13 @@ class APIService {
         });
     }
 
-    async updateUser(id, userData) {
+    async updateUserRole(id, newRole, adminEmail) {
         return this.request(`/UserApp/users/${id}`, {
             method: 'PUT',
-            body: JSON.stringify(userData)
+            body: JSON.stringify({
+                role: newRole,
+                requesting_user_email: adminEmail
+            })
         });
     }
 
