@@ -57,6 +57,20 @@ class AuthManager {
         }
         return true;
     }
+
+    requireAdmin() {
+        if (!this.isAuthenticated()) {
+            alert("Bu sayfaya erişmek için önce giriş yapmalısınız!");
+            window.location.href = 'auth.html';
+            return false;
+        }
+        if (!this.isAdmin()) {
+            alert("Yetkisiz Erişim: Bu sayfayı görüntülemek için Yönetici yetkisine sahip olmanız gerekir!"); 
+            window.location.href = 'dashboard.html';
+            return false;
+        }
+        return true;
+    }
 }
 
 // Global auth instance

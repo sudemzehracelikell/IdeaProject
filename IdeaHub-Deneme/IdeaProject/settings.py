@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import environ
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,6 +28,11 @@ SECRET_KEY = 'django-insecure-m_x&fm1xtbgz7nk=6@wxpw!l2m#$l$sa+(bw7_(&)#f4kaf9lr
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+
+env = environ.Env(
+    DEBUG=(bool, False)
+)
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 ALLOWED_HOSTS = []
 
@@ -85,10 +91,7 @@ WSGI_APPLICATION = 'IdeaProject.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': env.db(),
 }
 
 

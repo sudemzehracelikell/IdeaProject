@@ -92,7 +92,7 @@
     <script src="components.js"></script>
     <script>
         // Require admin authentication
-        if (!auth.requireAuth()) {
+        if (!auth.requireAdmin()) {
             showToast('Bu sayfaya erişim yetkiniz yok!', 'error');
             setTimeout(() => window.location.href = 'dashboard.html', 2000);
         }
